@@ -1,0 +1,34 @@
+spring:
+  application:
+    name: websocket-server
+
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      auto-offset-reset: latest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/ChatApplicationDB
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show:
+      sql: true
+    properties:
+      hibernate:
+        format_sql: true
+
+
+app:
+  kafka:
+    topic: CHAT-EVENTS
+    group-id: chat-server-1
+
+
+#  spring.datasource.url=jdbc:postgresql://localhost:5432/inventorydb
+#  spring.jpa.hibernate.ddl-auto=create
+#  spring.jpa.show-sql=true
+#  spring.jpa.properties.hibernate.format_sql=true
