@@ -3,6 +3,7 @@ package com.codewithyash.websocket_server.entities;
 import com.codewithyash.websocket_server.enums.MessageStatus;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
+import lombok.Builder;
 import lombok.Data;
 import lombok.NoArgsConstructor;
 
@@ -13,6 +14,7 @@ import java.time.Instant;
 @NoArgsConstructor
 @AllArgsConstructor
 @Table(name = "messages")
+@Builder
 public class Messages {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

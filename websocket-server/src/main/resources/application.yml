@@ -9,6 +9,12 @@ spring:
       key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
 
+  redis:
+    host: localhost
+    port: 6379
+    password:
+    database: 0
+
   datasource:
     url: jdbc:postgresql://localhost:5432/ChatApplicationDB
 
@@ -26,6 +32,10 @@ app:
   kafka:
     topic: CHAT-EVENTS
     group-id: chat-server-1
+
+    messages-event-topic: CHAT-MESSAGES
+
+  server-id: server-1
 
 
 #  spring.datasource.url=jdbc:postgresql://localhost:5432/inventorydb
