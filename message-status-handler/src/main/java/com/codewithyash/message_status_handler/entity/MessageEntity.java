@@ -1,6 +1,6 @@
-package com.codewithyash.websocket_server.entities;
+package com.codewithyash.message_status_handler.entity;
 
-import com.codewithyash.websocket_server.enums.MessageStatus;
+import com.codewithyash.message_status_handler.enums.MessageStatus;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -11,13 +11,13 @@ import java.time.Instant;
 
 @Entity
 @Data
-@NoArgsConstructor
-@AllArgsConstructor
 @Table(name = "messages", uniqueConstraints = {
         @UniqueConstraint(columnNames = {"message_id"})
 })
 @Builder
-public class Messages {
+@AllArgsConstructor
+@NoArgsConstructor
+public class MessageEntity {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;

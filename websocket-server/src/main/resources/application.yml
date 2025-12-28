@@ -20,7 +20,7 @@ spring:
 
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: validate
     show:
       sql: true
     properties:
@@ -30,12 +30,12 @@ spring:
 
 app:
   kafka:
-    topic: CHAT-EVENTS
-    group-id: chat-server-1
+    routing-topic: CHAT-EVENTS
+    group-id: ${app.server-id}
 
     messages-event-topic: CHAT-MESSAGES
 
-  server-id: server-1
+  server-id: default-server
 
 
 #  spring.datasource.url=jdbc:postgresql://localhost:5432/inventorydb

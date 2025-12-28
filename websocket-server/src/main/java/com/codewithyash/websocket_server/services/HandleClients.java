@@ -38,15 +38,20 @@ public class HandleClients {
 
     // Send message to a client
     public boolean sendDataToClient(String username, MessageResDTO message) {
-        try {
-            WebSocketSession session = connectedClients.get(username);
-            if (session != null && session.isOpen()) {
-                session.sendMessage(new TextMessage(objectMapper.writeValueAsString(message)));
-                return true;
-            }
-        } catch (Exception e) {
-            e.printStackTrace();
+        WebSocketSession session = connectedClients.get(username);
+
+        if (session == null || !session.isOpen()) {
+            connectedClients.remove(username);
+            return false;
         }
-        return false;
+
+        try {
+            session.sendMessage(new TextMessage(objectMapper.writeValueAsString(message)));
+            return true;
+        } catch (Exception e) {
+            connectedClients.remove(username);
+            log.error("Failed to send message to {}", username, e);
+            return false;
+        }
     }
 }

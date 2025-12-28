@@ -1,17 +1,19 @@
 package com.codewithyash.websocket_server.handler;
 
 import com.codewithyash.websocket_server.entities.Messages;
+import com.codewithyash.websocket_server.enums.EventKeys;
 import com.codewithyash.websocket_server.enums.MessageStatus;
 import com.codewithyash.websocket_server.kafka.Producer;
 import com.codewithyash.websocket_server.models.IncomingMessageDTO;
 import com.codewithyash.websocket_server.models.MessageResDTO;
+import com.codewithyash.websocket_server.models.RoutingEventDTO;
 import com.codewithyash.websocket_server.services.HandleClients;
 import com.codewithyash.websocket_server.services.MessageService;
 import com.codewithyash.websocket_server.services.RedisService;
+import com.codewithyash.websocket_server.services.UndeliveredMessageReplayService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.CloseStatus;
@@ -19,12 +21,10 @@ import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
 import org.springframework.web.socket.handler.TextWebSocketHandler;
 
-import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
-import java.util.UUID;
 
 @Component
 @RequiredArgsConstructor
@@ -33,8 +33,7 @@ public class WSHandler extends TextWebSocketHandler {
 
     private final HandleClients handleClients;
 
-    @Autowired
-    private Producer producer;
+    private final Producer producer;
 
     private final MessageService messageService;
 
@@ -45,11 +44,13 @@ public class WSHandler extends TextWebSocketHandler {
 
     private final ObjectMapper objectMapper;
 
+    private final UndeliveredMessageReplayService undeliveredMessageReplayService;
+
     @Override
     public void afterConnectionEstablished(WebSocketSession webSocketSession) throws Exception {
         // step 1: set into redis. -- done
         // step 2: get data from DB for messages which are undelivered -- done
-        // step 3: send them to client and produce event to kafka marked as delivered.
+        // step 3: send them to client and produce event to kafka marked as delivered. -- done.
         String username = webSocketSession.getHandshakeHeaders().getFirst("username");
         if (username == null) {
             log.error("username not found in headers");
@@ -67,16 +68,24 @@ public class WSHandler extends TextWebSocketHandler {
 
         log.info("client with username {} connected successfully, getting all the undelivered messages", username);
 
-        List<Messages> allUndeliveredMessages = messageService.getAllUndeliveredMessages(username);
 
-        if(!allUndeliveredMessages.isEmpty()) {
-            for (Messages messages : allUndeliveredMessages) {
-                // TODO: handling of failures messages
-                handleClients.sendDataToClient(username, new MessageResDTO(messages.getSender(), messages.getMessage(), messages.getCreatedAt().toString()));
-            }
-        } else {
-            log.info("no undelivered messages found for username {}", username);
-        }
+        undeliveredMessageReplayService.replay(username);
+
+        log.info("replay started...");
+//        List<Messages> allUndeliveredMessages = messageService.getAllUndeliveredMessages(username);
+//
+//        if(!allUndeliveredMessages.isEmpty()) {
+//            for (Messages messages : allUndeliveredMessages) {
+//                // TODO: handling of failures messages
+//                Thread.sleep(1000);
+//                handleClients.sendDataToClient(username, new MessageResDTO(messages.getSender(), messages.getMessage(), messages.getCreatedAt().toString()));
+//
+//                producer.publishMessagesEventToKafka(messageService.getMessageEventFormatInString(
+//                        MessageStatus.DELIVERED,messages.getMessageId(), messages.getSender(), messages.getReceiver(), messages.getMessage()), EventKeys.UPDATE_MESSAGE_STATUS);
+//            }
+//        } else {
+//            log.info("no undelivered messages found for username {}", username);
+//        }
     }
 
     @Override
@@ -89,20 +98,27 @@ public class WSHandler extends TextWebSocketHandler {
 
         log.info("Message received from {} => {}", sender, message.getPayload());
 
-
         IncomingMessageDTO incomingMessage =
                 objectMapper.readValue(message.getPayload(), IncomingMessageDTO.class);
 
         String receiver = incomingMessage.getTo();
         String content  = incomingMessage.getContent();
 
-        DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+        // Publish message to kafka
+        Messages messageDetails = messageService.getMessageEventFormat(
+                MessageStatus.UNDELIVERED,null, sender, receiver, content
+        );
 
-        String istTime = ZonedDateTime.now(ZoneId.of("Asia/Kolkata")).format(formatter);
+        producer.publishMessagesEventToKafka(objectMapper.writeValueAsString(messageDetails),
+                EventKeys.NEW_MESSAGE_STATUS);
 
-        // step 1: check that client is connected with us or not.
-        // step 2: if yes -> send data directly and produce it to kafka as delivered.
-        if(handleClients.isClientConnected(receiver)) {
+
+        if(handleClients.isClientConnected(messageDetails.getReceiver())) {
+            // Receiver is connected locally
+            DateTimeFormatter formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+
+            String istTime = ZonedDateTime.now(ZoneId.of("Asia/Kolkata")).format(formatter);
+
             log.info("Receiver {} is connected locally. Sending WS message.", receiver);
 
             MessageResDTO msgToDeliver = new MessageResDTO(
@@ -115,36 +131,36 @@ public class WSHandler extends TextWebSocketHandler {
             handleClients.sendDataToClient(receiver, msgToDeliver);
 
             // Publish Deliver event to kafka
-            String msgJson = objectMapper.writeValueAsString(Messages.builder()
-                    .messageId(UUID.randomUUID().toString())
-                    .sender(sender)
-                    .receiver(receiver)
-                    .message(content)
-                    .status(MessageStatus.DELIVERED)
-                    .createdAt(Instant.now())
-                    .build()
-            );
-
-            producer.publishMessageToKafka(msgJson);
-
-            return;
+            producer.publishMessagesEventToKafka(messageService.getMessageEventFormatInString(
+                    MessageStatus.DELIVERED,
+                    messageDetails.getMessageId(),
+                    messageDetails.getSender(),
+                    messageDetails.getReceiver(),
+                    content), EventKeys.NEW_MESSAGE_STATUS);
         }
 
-        log.info("{} is not connected with us, assuming user is offline", receiver);
+        // Checking receiver is connected with another instance or not
+        else if(redisService.userExistInRedis(receiver)) {
+            // Receiver is connected with another instance
+            log.info("{} receiver is connected with another server routing event", receiver);
+            producer.publishMessageRoutingEventToKafka(objectMapper.writeValueAsString(RoutingEventDTO
+                    .builder()
+                            .messageid(messageDetails.getMessageId())
+                            .sender(sender)
+                            .receiver(receiver)
+                            .content(content)
+                    .build()));
+        }
 
-        String msgJson = objectMapper.writeValueAsString(Messages.builder()
-                .messageId(UUID.randomUUID().toString())
-                .sender(sender)
-                .receiver(receiver)
-                .message(content)
-                .status(MessageStatus.UNDELIVERED)
-                .createdAt(Instant.now())
-                .build()
-        );
-
-        producer.publishMessageToKafka(msgJson);
-        // step 3: if no -> check in redis, if found send data to kafka, else produce to kafka as undelivered
-
+//        // Receiver is offline
+//        else {
+//            // Receiver is offline
+//            log.info("{} is not connected anywhere, assuming user is offline", receiver);
+//
+//            producer.publishMessagesEventToKafka(messageService.getMessageEventFormat(
+//                    MessageStatus.UNDELIVERED,null, sender, receiver, content
+//            ),EventKeys.NEW_MESSAGE_STATUS);
+//        }
     }
 
     @Override

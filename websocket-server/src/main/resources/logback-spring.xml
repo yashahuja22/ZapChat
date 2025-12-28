@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<configuration scan="true">
+
+    <!-- Read Spring properties -->
+    <springProperty scope="context" name="SERVER_ID" source="app.server-id"/>
+    <springProperty scope="context" name="SERVER_PORT" source="server.port"/>
+
+    <!-- Fallback values -->
+    <property name="SERVER_ID" value="${SERVER_ID:-unknown}"/>
+    <property name="SERVER_PORT" value="${SERVER_PORT:-0000}"/>
+
+    <property name="LOG_PATH" value="logs"/>
+
+    <!-- JSON Rolling File Appender -->
+    <appender name="JSON_FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
+        <file>${LOG_PATH}/ws-${SERVER_ID}-${SERVER_PORT}.log</file>
+
+        <rollingPolicy class="ch.qos.logback.core.rolling.SizeAndTimeBasedRollingPolicy">
+            <fileNamePattern>
+                ${LOG_PATH}/ws-${SERVER_ID}-${SERVER_PORT}.%d{yyyy-MM-dd}.%i.log
+            </fileNamePattern>
+
+            <maxFileSize>20MB</maxFileSize>
+            <maxHistory>30</maxHistory>
+            <totalSizeCap>1GB</totalSizeCap>
+        </rollingPolicy>
+
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+
+            <!-- Add static fields -->
+            <customFields>
+                {
+                "service":"websocket-server",
+                "server_id":"${SERVER_ID}",
+                "port":"${SERVER_PORT}"
+                }
+            </customFields>
+
+        </encoder>
+    </appender>
+
+    <!-- Optional Console JSON Logs -->
+    <appender name="JSON_CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder"/>
+    </appender>
+
+    <!-- Root Logger -->
+    <root level="INFO">
+        <appender-ref ref="JSON_FILE"/>
+        <appender-ref ref="JSON_CONSOLE"/>
+    </root>
+
+</configuration>
