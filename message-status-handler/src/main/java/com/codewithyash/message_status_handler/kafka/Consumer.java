@@ -44,7 +44,6 @@ public class Consumer {
 
         } catch (Exception e) {
             log.error("Error processing event", e);
-            // You can also push to DQL Redis/Kafka here
         }
     }
 }
